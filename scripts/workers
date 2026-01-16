@@ -14,6 +14,57 @@ date_now() {
     echo -n $(date +"%Y-%m-%d-%H-%M-%S")
 }
 
+delegate_cgroup_controllers() {
+    local cg_root=$1
+    local subtree_file="$cg_root/cgroup.subtree_control"
+    local procs_file="$cg_root/cgroup.procs"
+    local init_cgroup="$cg_root/init"
+    local controllers="+cpu +memory +io +pids"
+
+    [[ -f "$subtree_file" && -f "$procs_file" ]] || return
+
+    if grep -qw "memory" "$subtree_file" 2> /dev/null; then
+        return
+    fi
+
+    mkdir -p "$init_cgroup"
+
+    local attempts=0
+    while [[ $attempts -lt 5 ]]; do
+        while read -r pid; do
+            [[ -z "$pid" ]] && continue
+            printf "%s" "$pid" > "$init_cgroup/cgroup.procs" 2> /dev/null || true
+        done < "$procs_file"
+
+        printf "%s" "$$" > "$init_cgroup/cgroup.procs" 2> /dev/null || true
+
+        if printf "%s\n" "$controllers" > "$subtree_file" 2> /dev/null; then
+            return
+        fi
+
+        attempts=$((attempts + 1))
+        sleep 0.05
+    done
+
+    echo "[$(date_now)] Failed to enable cgroup controllers at $cg_root" >&2
+}
+
+ensure_isolate_runtime() {
+    local cg_root=${ISOLATE_CGROUP_ROOT:-/sys/fs/cgroup}
+    local runtime_root=/run/isolate
+
+    if [[ ! -d "$cg_root" ]]; then
+        echo "[$(date_now)] Missing cgroup root $cg_root" >&2
+        exit 1
+    fi
+
+    delegate_cgroup_controllers "$cg_root"
+
+    sudo mkdir -p "$runtime_root" "$runtime_root/locks"
+    sudo chown root:root "$runtime_root" "$runtime_root/locks"
+    echo "$cg_root" | sudo tee "$runtime_root/cgroup" > /dev/null
+}
+
 exit_gracefully() {
     echo "[$(date_now)] Killing workers."
     run_resque=0
@@ -22,6 +73,8 @@ exit_gracefully() {
 }
 
 trap exit_gracefully SIGTERM SIGINT
+
+ensure_isolate_runtime
 
 mkdir -p tmp/pids &> /dev/null
 while [[ $run_resque -eq 1 ]]; do

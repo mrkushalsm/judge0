@@ -1,7 +1,22 @@
+require "rubygems/version"
+
 class IsolateJob < ApplicationJob
   retry_on RuntimeError, wait: 0.1.seconds, attempts: 100
 
   queue_as ENV["JUDGE0_VERSION"].to_sym
+
+  MIN_VERSION_WITHOUT_CG_TIMING = Gem::Version.new("2.0.0")
+  CG_TIMING_SUPPORTED = begin
+    version_line = `isolate --version 2>/dev/null`.lines.first.to_s
+    version_match = version_line[/\d+\.\d+(?:\.\d+)?/]
+    if version_match
+      Gem::Version.new(version_match) < MIN_VERSION_WITHOUT_CG_TIMING
+    else
+      true
+    end
+  rescue StandardError
+    true
+  end
 
   STDIN_FILE_NAME = "stdin.txt"
   STDOUT_FILE_NAME = "stdout.txt"
@@ -92,7 +107,7 @@ class IsolateJob < ApplicationJob
     -w 4 \
     -k #{Config::MAX_STACK_LIMIT} \
     -p#{Config::MAX_MAX_PROCESSES_AND_OR_THREADS} \
-    #{submission.enable_per_process_and_thread_time_limit ? (cgroups.present? ? "--no-cg-timing" : "") : "--cg-timing"} \
+    #{cg_timing_flag_for(submission)} \
     #{submission.enable_per_process_and_thread_memory_limit ? "-m " : "--cg-mem="}#{Config::MAX_MEMORY_LIMIT} \
     -f #{Config::MAX_EXTRACT_SIZE} \
     --run \
@@ -149,7 +164,7 @@ class IsolateJob < ApplicationJob
     -w #{Config::MAX_WALL_TIME_LIMIT} \
     -k #{Config::MAX_STACK_LIMIT} \
     -p#{Config::MAX_MAX_PROCESSES_AND_OR_THREADS} \
-    #{submission.enable_per_process_and_thread_time_limit ? (cgroups.present? ? "--no-cg-timing" : "") : "--cg-timing"} \
+    #{cg_timing_flag_for(submission)} \
     #{submission.enable_per_process_and_thread_memory_limit ? "-m " : "--cg-mem="}#{Config::MAX_MEMORY_LIMIT} \
     -f #{Config::MAX_MAX_FILE_SIZE} \
     -E HOME=/tmp \
@@ -230,7 +245,7 @@ class IsolateJob < ApplicationJob
     -w #{submission.wall_time_limit} \
     -k #{submission.stack_limit} \
     -p#{submission.max_processes_and_or_threads} \
-    #{submission.enable_per_process_and_thread_time_limit ? (cgroups.present? ? "--no-cg-timing" : "") : "--cg-timing"} \
+    #{cg_timing_flag_for(submission)} \
     #{submission.enable_per_process_and_thread_memory_limit ? "-m " : "--cg-mem="}#{submission.memory_limit} \
     -f #{submission.max_file_size} \
     -E HOME=/tmp \
@@ -367,5 +382,16 @@ class IsolateJob < ApplicationJob
     text.split("\n").collect(&:rstrip).join("\n").rstrip
   rescue ArgumentError
     return text
+  end
+
+  def cg_timing_flag_for(submission)
+    return "" unless cgroups.present?
+    return "" unless CG_TIMING_SUPPORTED
+
+    if submission.enable_per_process_and_thread_time_limit
+      "--no-cg-timing"
+    else
+      "--cg-timing"
+    end
   end
 end

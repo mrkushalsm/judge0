@@ -7,7 +7,7 @@ x-logging:
 
 services:
   server:
-    image: judge0/judge0:latest
+    image: judge0/judge0:cgv2
     volumes:
       - ./judge0.conf:/judge0.conf:ro
     ports:
@@ -17,7 +17,7 @@ services:
     restart: always
 
   worker:
-    image: judge0/judge0:latest
+    image: judge0/judge0:cgv2
     command: ["./scripts/workers"]
     volumes:
       - ./judge0.conf:/judge0.conf:ro

@@ -1,0 +1,30 @@
+diff --git a/rules.c b/rules.c
+--- a/rules.c
++++ b/rules.c
+@@ -22,6 +22,12 @@
+ #include <sys/vfs.h>
+ #include <unistd.h>
+ 
++#ifndef SYS_quotactl_fd
++#ifdef __NR_quotactl_fd
++#define SYS_quotactl_fd __NR_quotactl_fd
++#endif
++#endif
++
+ /*** Environment rules ***/
+ 
+ struct env_rule {
+@@ -496,8 +502,13 @@ set_quota(void)
+   if (cwd_fd < 0)
+     die("open: %m");
+ 
++#ifdef SYS_quotactl_fd
+   if (syscall(SYS_quotactl_fd, cwd_fd, quota_op, box_uid, dq_ptr) < 0)
+     quotactl_error();
++#else
++  if (quotactl(quota_op, ".", box_uid, dq_ptr) < 0)
++    quotactl_error();
++#endif
+ 
+   close(cwd_fd);
+ 
