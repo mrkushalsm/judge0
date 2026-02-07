@@ -66,9 +66,21 @@ class IsolateJob < ApplicationJob
 
   private
 
+  CGROUP_CONTROLLERS_PATH = "/sys/fs/cgroup/cgroup.controllers".freeze
+
+  def self.unified_cgroup_supported?
+    return @unified_cgroup_supported unless @unified_cgroup_supported.nil?
+
+    @unified_cgroup_supported = File.exist?(CGROUP_CONTROLLERS_PATH)
+  rescue StandardError
+    @unified_cgroup_supported = false
+  end
+
   def initialize_workdir
     @box_id = submission.id%2147483647
-    @cgroups = (!submission.enable_per_process_and_thread_time_limit || !submission.enable_per_process_and_thread_memory_limit) ? "--cg" : ""
+    allow_cgroups = self.class.unified_cgroup_supported?
+    requires_cgroups = (!submission.enable_per_process_and_thread_time_limit || !submission.enable_per_process_and_thread_memory_limit)
+    @cgroups = (allow_cgroups && requires_cgroups) ? "--cg" : ""
     @workdir = `isolate #{cgroups} -b #{box_id} --init`.chomp
     @boxdir = workdir + "/box"
     @tmpdir = workdir + "/tmp"
@@ -108,7 +120,7 @@ class IsolateJob < ApplicationJob
     -k #{Config::MAX_STACK_LIMIT} \
     -p#{Config::MAX_MAX_PROCESSES_AND_OR_THREADS} \
     #{cg_timing_flag_for(submission)} \
-    #{submission.enable_per_process_and_thread_memory_limit ? "-m " : "--cg-mem="}#{Config::MAX_MEMORY_LIMIT} \
+    #{cg_memory_flag_for(Config::MAX_MEMORY_LIMIT)} \
     -f #{Config::MAX_EXTRACT_SIZE} \
     --run \
     -- /usr/bin/unzip -n -qq #{ADDITIONAL_FILES_ARCHIVE_FILE_NAME} \
@@ -165,7 +177,7 @@ class IsolateJob < ApplicationJob
     -k #{Config::MAX_STACK_LIMIT} \
     -p#{Config::MAX_MAX_PROCESSES_AND_OR_THREADS} \
     #{cg_timing_flag_for(submission)} \
-    #{submission.enable_per_process_and_thread_memory_limit ? "-m " : "--cg-mem="}#{Config::MAX_MEMORY_LIMIT} \
+    #{cg_memory_flag_for(Config::MAX_MEMORY_LIMIT)} \
     -f #{Config::MAX_MAX_FILE_SIZE} \
     -E HOME=/tmp \
     -E PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\" \
@@ -246,7 +258,7 @@ class IsolateJob < ApplicationJob
     -k #{submission.stack_limit} \
     -p#{submission.max_processes_and_or_threads} \
     #{cg_timing_flag_for(submission)} \
-    #{submission.enable_per_process_and_thread_memory_limit ? "-m " : "--cg-mem="}#{submission.memory_limit} \
+    #{cg_memory_flag_for(submission.memory_limit)} \
     -f #{submission.max_file_size} \
     -E HOME=/tmp \
     -E PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\" \
@@ -393,5 +405,12 @@ class IsolateJob < ApplicationJob
     else
       "--cg-timing"
     end
+  end
+
+  def cg_memory_flag_for(limit)
+    return "-m #{limit}" if submission.enable_per_process_and_thread_memory_limit
+    return "" unless cgroups.present?
+
+    "--cg-mem=#{limit}"
   end
 end

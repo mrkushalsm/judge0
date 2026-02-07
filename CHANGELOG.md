@@ -15,7 +15,7 @@ Judge0 is collecting telemetry data to help improve the product and understand i
 #### System Requirements
 Please note that Judge0 has only been tested on **Linux** and might not work on other systems; thus, we do not provide support for it.
 
-We recommend using Ubuntu 22.04 (or any modern distribution such as Arch Linux) with **cgroup v2** enabled, which is the default on kernels >= 5.19. Judge0 now ships an updated `isolate` build that targets the unified hierarchy, so make sure your host exposes `/sys/fs/cgroup/cgroup.controllers` before starting the containers:
+We recommend using Ubuntu 22.04 (or any modern distribution such as Arch Linux) with **cgroup v2** enabled, which is the default on kernels >= 5.19. Judge0 now ships an updated `isolate` build that targets the unified hierarchy but still detects legacy cgroup v1 roots and skips the controller delegation step automatically, so older hosts continue working without those files. When cgroup v2 is available, make sure your host exposes `/sys/fs/cgroup/cgroup.controllers` before starting the containers:
 1. Verify the hierarchy with `sudo test -f /sys/fs/cgroup/cgroup.controllers`.
 2. If the file is missing, edit `/etc/default/grub`, remove any `systemd.unified_cgroup_hierarchy=0` overrides, and (optionally) add `systemd.unified_cgroup_hierarchy=1`.
 3. Apply the changes: `sudo update-grub` (or `grub-mkconfig -o /boot/grub/grub.cfg` on Arch).

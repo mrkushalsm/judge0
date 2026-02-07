@@ -13,7 +13,7 @@ delegate_cgroup_controllers() {
     local init_cgroup="$cg_root/init"
     local controllers="+cpu +memory +io +pids"
 
-    [[ -f "$subtree_file" && -f "$procs_file" ]] || return
+    [[ -f "$cg_root/cgroup.controllers" && -f "$subtree_file" && -f "$procs_file" ]] || return
 
     if grep -qw "memory" "$subtree_file" 2> /dev/null; then
         return
@@ -50,7 +50,11 @@ ensure_isolate_runtime() {
         exit 1
     fi
 
-    delegate_cgroup_controllers "$cg_root"
+    if [[ -f "$cg_root/cgroup.controllers" ]]; then
+        delegate_cgroup_controllers "$cg_root"
+    else
+        echo "[$(date +"%Y-%m-%d-%H-%M-%S")] cgroup v2 controllers not detected; skipping delegation" >&2
+    fi
 
     sudo mkdir -p "$runtime_root" "$runtime_root/locks"
     sudo chown root:root "$runtime_root" "$runtime_root/locks"
